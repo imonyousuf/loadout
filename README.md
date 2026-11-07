@@ -10,25 +10,39 @@ load across pallets at the height and weight limits.
 `src/engine/pack.ts`, with tests in `src/engine/pack.test.ts`.
 
 1. **Layer patterns.** For each case size, try splitting the 48 × 40 in deck into two blocks,
-   each a grid of the case in one orientation, and keep the split that fits the most cases
-   (10 cases of 24 × 500 mL instead of the 9 a plain grid gives).
-2. **Full layers first.** Every product fills as many whole layers as it can.
-3. **Part and mixed layers.** Leftover cases of one product take the spots of its pattern
-   nearest the middle of the skid. Leftovers of several products with nearly the same height
-   share a layer, placed with MaxRects bin packing and centred, so every layer has a flat top.
-4. **Stacking like a loader.** Start from the fewest pallets the totals allow. Each sturdy
-   layer goes on the shortest pallet it fits on, which keeps every pallet heavy at the bottom
-   and spreads the headroom evenly. Crushable products (chips) then ride on top of the drink
-   pallets. If anything does not fit under 60 in and 2,200 lb, try again with one more pallet.
+   each a grid of the case in one orientation. Keep the split that fits the most cases
+   (10 cases of 24 × 500 mL instead of the 9 a plain grid gives), and among equals the one whose
+   blocks line up, so it squares up cleanly.
+2. **Full layers first.** Every product fills as many whole layers as it can. A product too
+   heavy for a whole layer gets layers of as many cases as the 2,200 lb limit allows.
+3. **Shared and part layers.** Leftover cases that fill the same spots (500 mL bottles and
+   water) make complete layers together. Other leftovers of nearly the same height share a layer
+   packed with MaxRects, and a few cases of one product sit as one tight block in the middle.
+4. **Stacking like a loader.** Start from the fewest pallets the totals allow. Each whole drink
+   layer goes on the shortest pallet it fits on, keeping every pallet heavy at the bottom and
+   evenly tall. Chips then claim the flat tops of drink pallets, and part layers fill in where
+   they leave nothing hanging. A short search tries other spots before adding a pallet.
+5. **Square and steady.** Every whole layer on a pallet is pushed out to the same footprint, the
+   way a loader squares a load, so each pallet reads as one solid block. Each case must touch the
+   cases below over at least 40% of its base with its middle over that contact, so nothing hangs
+   over empty space.
 
-The tests check that every case is placed once, nothing overlaps or leaves the deck, every
-pallet stays under its limits, nothing heavy sits on chips, chips never start a pallet when
-there is room on top of drinks, pallets stay heavy at the bottom, and results are deterministic.
+The 22 tests check that every case is placed once, nothing overlaps or leaves the deck, every
+pallet stays under 60 in and 2,200 lb, nothing is ever set on chips, every case rests on the
+cases below it, whole layers square up to one footprint, heavy products split instead of
+failing, a large order packs fast enough to follow typing, and results are deterministic.
 
 ## Your own products
 
 Use **Add a product** to enter a name, category, case size and weight. The form shows how many
 fit per layer before you add it. Products you add are saved in your browser.
+
+## The tour
+
+A first visit opens a short video tour; **How it works** in the header plays it again. The video is
+made with [HyperFrames](https://hyperframes.heygen.com) from real footage of the app: `tour/`
+holds the recorder and the film project. Opening the app with `?capture` puts the 3D view in
+recording mode, where it draws one exact frame each time the recorder steps it.
 
 ## Run it
 

@@ -1,4 +1,4 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, advance, useFrame, useThree } from "@react-three/fiber";
 import { Edges, Line, OrbitControls } from "@react-three/drei";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -6,6 +6,11 @@ import { LIMITS, PALLET, type Pallet } from "./engine/pack";
 import type { Product } from "./engine/products";
 
 const ACCENT = "#ff5b1f";
+/**
+ * Recording mode (?capture), used to film the tour: the scene draws only when a recorder steps
+ * it, one exact frame at a time, so footage is smooth however slow the machine rendering it is.
+ */
+const CAPTURE = typeof location !== "undefined" && new URLSearchParams(location.search).has("capture");
 const DECK = PALLET.deckHeight;
 const GAP = 0.18; // visual gap between cases, in inches
 
@@ -32,10 +37,12 @@ export default function Scene(props: Props) {
     <Canvas
       shadows
       dpr={[1, 2]}
+      frameloop={CAPTURE ? "never" : "always"}
       camera={{ position: [118, 92, 138], fov: 34, near: 1, far: 2000 }}
-      gl={{ antialias: true }}
+      gl={{ antialias: !CAPTURE, preserveDrawingBuffer: CAPTURE }}
       onPointerMissed={() => props.onHover(null)}
     >
+      {CAPTURE && <CaptureClock />}
       <color attach="background" args={["#0b0b0c"]} />
       <fog attach="fog" args={["#0b0b0c", 220, 520]} />
       <ambientLight intensity={0.55} />
@@ -63,12 +70,20 @@ export default function Scene(props: Props) {
         maxDistance={260}
         maxPolarAngle={Math.PI * 0.47}
         autoRotate={props.autoRotate && !props.reduceMotion}
-        autoRotateSpeed={0.55}
+        autoRotateSpeed={CAPTURE ? 1.1 : 0.55}
         enableDamping
       />
       <Resize />
     </Canvas>
   );
+}
+
+/** In recording mode, lets the recorder draw a frame at an exact time, in seconds. */
+function CaptureClock() {
+  useEffect(() => {
+    (window as unknown as { __advance: (s: number) => void }).__advance = (s) => advance(s);
+  }, []);
+  return null;
 }
 
 /** Keeps the camera framing sensible on narrow screens. */
@@ -159,6 +174,9 @@ function HeightLimit() {
   return <Line points={pts} color={ACCENT} lineWidth={1.2} dashed dashSize={2} gapSize={1.6} transparent opacity={0.7} />;
 }
 
+/** Page time in seconds: real time, or the recorder's exact time in recording mode. */
+const seconds = () => performance.now() / 1000;
+
 const easeOutBack = (t: number) => {
   const c1 = 1.25;
   const c3 = c1 + 1;
@@ -177,7 +195,7 @@ function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, r
   const prevKeys = useRef<Set<string>>(new Set());
   const prevBuild = useRef(buildId);
   const anim = useRef<{ start: number; order: Map<number, number>; per: number }>({ start: -1, order: new Map(), per: 0.03 });
-  const clock = useThree((s) => s.clock);
+  const last = useRef(seconds());
 
   // a layout effect, so new cases are hidden before the next frame draws them at rest
   useLayoutEffect(() => {
@@ -190,14 +208,18 @@ function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, r
     fresh.sort((a, b) => boxes[a].seq - boxes[b].seq);
     const order = new Map<number, number>();
     fresh.forEach((i, n) => order.set(i, n));
-    anim.current = { start: clock.elapsedTime, order, per: Math.min(0.045, 2.6 / Math.max(fresh.length, 1)) };
+    anim.current = { start: seconds(), order, per: Math.min(0.045, 2.6 / Math.max(fresh.length, 1)) };
     prevKeys.current = new Set(keys);
-  }, [keys, buildId, boxes, clock]);
+  }, [keys, buildId, boxes]);
 
   const refs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame(({ clock }) => {
+  useFrame(() => {
+    const now = seconds();
+    // dimming eases at the same speed whatever the frame rate
+    const ease = 1 - Math.pow(0.8, Math.min(0.1, Math.max(0, now - last.current)) * 60);
+    last.current = now;
     const { start, order, per } = anim.current;
-    const t = clock.elapsedTime - start;
+    const t = now - start;
     boxes.forEach((b, i) => {
       const m = refs.current[i];
       if (!m) return;
@@ -221,7 +243,7 @@ function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, r
       const dim = (focusLayer !== null && layerOf[i] !== focusLayer) || (focusProduct !== null && b.productId !== focusProduct);
       const mat = m.material as THREE.MeshStandardMaterial;
       const target = dim ? 0.12 : 1;
-      mat.opacity += (target - mat.opacity) * 0.2;
+      mat.opacity += (target - mat.opacity) * ease;
       if (Math.abs(mat.opacity - target) < 0.005) mat.opacity = target;
       const want = mat.opacity < 0.999;
       if (mat.transparent !== want) {

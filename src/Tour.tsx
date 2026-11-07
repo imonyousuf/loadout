@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
+  src: string;
   /** shown by itself on a first visit: starts muted, since browsers block sound until a click */
   first: boolean;
   onClose: () => void;
 }
 
 /** A short video that shows what Loadout is and how to use it. */
-export default function Tour({ first, onClose }: Props) {
+export default function Tour({ src, first, onClose }: Props) {
   const video = useRef<HTMLVideoElement>(null);
-  const closeBtn = useRef<HTMLButtonElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const [muted, setMuted] = useState(true);
   const [ended, setEnded] = useState(false);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    closeBtn.current?.focus({ preventScroll: true });
+    // focus the dialog itself: keyboard users tab on to its buttons, and nothing lights up on open
+    card.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -57,13 +59,13 @@ export default function Tour({ first, onClose }: Props) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="tour-card">
+      <div className="tour-card" ref={card} tabIndex={-1}>
         <div className="tour-head">
           <div>
             <span className="tour-k">Quick tour · under a minute</span>
             <h2 id="tour-title">How Loadout works</h2>
           </div>
-          <button ref={closeBtn} type="button" className="tour-x" onClick={onClose} aria-label="Close the tour">
+          <button type="button" className="tour-x" onClick={onClose} aria-label="Close the tour">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
               <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
@@ -73,8 +75,8 @@ export default function Tour({ first, onClose }: Props) {
         <div className="tour-video">
           <video
             ref={video}
-            src="./tour.mp4"
-            poster="./tour.jpg"
+            src={src}
+            poster={src.replace(/\.mp4$/, ".jpg")}
             playsInline
             controls
             preload="auto"

@@ -77,6 +77,26 @@ function loadCustom(): Product[] {
 }
 
 const EMPTY: PackResult = { pallets: [], totalCases: 0, totalWeight: 0 };
+const TOUR_SRC = "./tour.mp4";
+
+/** True once the tour video is known to load, so the tour never opens onto a broken player. */
+function useVideoReady(src: string) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const v = document.createElement("video");
+    const ok = () => setReady(true);
+    v.preload = "metadata";
+    v.muted = true;
+    v.addEventListener("loadedmetadata", ok, { once: true });
+    v.src = src;
+    return () => {
+      v.removeEventListener("loadedmetadata", ok);
+      v.removeAttribute("src");
+      v.load();
+    };
+  }, [src]);
+  return ready;
+}
 const reduceMotionQuery = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 /** Hover previews are for a mouse; on touch a tap would leave the preview stuck on. */
 const mouse = (fn: () => void) => (e: React.PointerEvent) => {
@@ -98,6 +118,7 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [tour, setTour] = useState<null | "first" | "asked">(() => (store.get(TOUR_KEY) ? null : "first"));
+  const tourReady = useVideoReady(TOUR_SRC);
 
   useEffect(() => store.set(CUSTOM_KEY, JSON.stringify(custom)), [custom]);
 
@@ -177,10 +198,12 @@ export default function App() {
           <span className="ver">Pallet builder for DSD orders</span>
         </div>
         <div className="topr">
-          <button type="button" className="howbtn" onClick={() => setTour("asked")}>
-            <span className="play" aria-hidden="true" />
-            How it works
-          </button>
+          {tourReady && (
+            <button type="button" className="howbtn" onClick={() => setTour("asked")}>
+              <span className="play" aria-hidden="true" />
+              How it works
+            </button>
+          )}
           <a className="by" href="https://github.com/imonyousuf" target="_blank" rel="noopener">
             Built by Imon Yousuf
           </a>
@@ -480,7 +503,7 @@ export default function App() {
         </aside>
       </main>
 
-      {tour && <Tour first={tour === "first"} onClose={closeTour} />}
+      {tour && tourReady && <Tour src={TOUR_SRC} first={tour === "first"} onClose={closeTour} />}
     </div>
   );
 }

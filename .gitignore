@@ -3,3 +3,10 @@ dist
 .DS_Store
 *.local
 .env
+
+# tour: footage, music and renders are generated (tour/rec.cjs records, tour/build.py composes)
+tour/film/assets/*.mp4
+tour/film/assets/bgm/*.wav
+tour/film/renders/
+tour/film/.hyperframes/
+tour/film/node_modules/

@@ -1,0 +1,33 @@
+{
+  "fps": 30,
+  "width": 1600,
+  "height": 900,
+  "dsf": 2,
+  "events": [
+    {
+      "name": "start",
+      "frame": 0,
+      "t": 0
+    },
+    {
+      "name": "click-tea-pallet",
+      "frame": 43,
+      "t": 1.433,
+      "x": 352.6,
+      "y": 858.5
+    },
+    {
+      "name": "tea-build",
+      "frame": 45,
+      "t": 1.5
+    },
+    {
+      "name": "end",
+      "frame": 177,
+      "t": 5.9
+    }
+  ],
+  "boxes": {},
+  "teaTab": 4,
+  "frames": 177
+}

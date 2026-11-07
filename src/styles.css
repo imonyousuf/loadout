@@ -213,6 +213,7 @@ button { cursor: pointer; }
 .tour { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(6, 6, 7, .72);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: tourfade .25s ease-out; }
 @keyframes tourfade { from { opacity: 0; } }
+.tour-card:focus { outline: none; }
 .tour-card { width: min(960px, 100%); max-height: 100%; overflow: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 16px;
   box-shadow: 0 30px 80px rgba(0,0,0,.55); animation: tourin .35s cubic-bezier(.2,.8,.2,1); }
 @keyframes tourin { from { opacity: 0; transform: translateY(10px) scale(.985); } }

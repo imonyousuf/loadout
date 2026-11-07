@@ -1,0 +1,96 @@
+<template>
+  <style>
+    @font-face { font-family: "Geist"; src: url("assets/fonts/Geist-SemiBold.woff2") format("woff2"); font-weight: 600; }
+    @font-face { font-family: "Geist"; src: url("assets/fonts/Geist-Bold.woff2") format("woff2"); font-weight: 700; }
+    @font-face { font-family: "Geist Mono"; src: url("assets/fonts/GeistMono-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Geist Mono"; src: url("assets/fonts/GeistMono-SemiBold.woff2") format("woff2"); font-weight: 600; }
+    #root { position: absolute; inset: 0; overflow: hidden; background: #0b0b0c; font-family: "Geist", sans-serif; color: #ededee; }
+    #app-view { position: absolute; left: 0; top: 0; width: 1920px; height: 930px; overflow: hidden; }
+    #app-rule { position: absolute; left: 133px; right: 133px; top: 930px; height: 1px; background: #232327; }
+    #app-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    #app-take, #app-pay { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; object-fit: cover; }
+    .cap { position: absolute; font-weight: 600; font-size: 56px; letter-spacing: -0.025em; line-height: 1.1; white-space: nowrap; }
+    .cap span { display: inline-block; }
+    .cap .num { font-family: "Geist Mono", monospace; font-weight: 600; letter-spacing: -0.03em; }
+    .accent { color: #ff5b1f; }
+    #app-mark { position: absolute; right: 133px; top: 962px; display: flex; align-items: center; gap: 16px; }
+    #app-mark .glyph { position: relative; width: 52px; height: 52px; }
+    #app-mark .glyph i, #app-mark .glyph b { position: absolute; left: 6px; right: 6px; border-radius: 2px; }
+    #mk-a { top: 8px; height: 13px; background: #ff5b1f; }
+    #mk-b { top: 24px; height: 13px; background: #ff5b1f; opacity: .65; }
+    #mk-c { top: 40px; height: 7px; background: #c9a06b; left: 1px !important; right: 1px !important; }
+    #app-mark .word { font-size: 44px; font-weight: 700; letter-spacing: -0.03em; }
+  </style>
+
+  <div id="root" data-composition-id="app" data-width="1920" data-height="1080">
+    <div id="app-rule"></div>
+    <div id="app-view">
+      <div id="app-cam">
+        <video id="app-take" class="clip" src="assets/take.mp4" data-start="0" data-duration="41.8" data-track-index="1" muted playsinline></video>
+        <video id="app-pay" class="clip" src="assets/payoff.mp4" data-hf-media-start-basis="local" data-start="41.8" data-media-start="0" data-duration="5.9" data-track-index="2" muted playsinline></video>
+      </div>
+    </div>
+    <div id="c1" class="clip cap" data-start="2.583" data-duration="3.467" data-track-index="3" style="left:133px;top:958px"><span>Pick</span> <span>an</span> <span>order.</span> <span>Loadout</span> <span>builds</span> <span>the</span> <span class="accent">pallets.</span></div>
+    <div id="c2" class="clip cap" data-start="6.55" data-duration="3.083" data-track-index="3" style="left:133px;top:958px"><span>Every</span> <span>pallet</span> <span>stays</span> <span>under</span> <span>60</span> <span>in,</span> <span>2,200</span> <span>lb.</span></div>
+    <div id="c3" class="clip cap" data-start="10.333" data-duration="3.867" data-track-index="3" style="left:133px;top:958px"><span>Five</span> <span>pallets.</span> <span class="accent">Click</span> <span>one</span> <span>to</span> <span>see</span> <span>it</span> <span>built.</span></div>
+    <div id="c4" class="clip cap" data-start="14.95" data-duration="4.033" data-track-index="3" style="left:133px;top:958px"><span>Hover</span> <span>a</span> <span class="accent">layer</span> <span>to</span> <span>see</span> <span>it</span> <span>on</span> <span>its</span> <span>own.</span></div>
+    <div id="c5" class="clip cap" data-start="20.633" data-duration="3.034" data-track-index="3" style="left:133px;top:958px"><span>Heavy</span> <span>cases</span> <span>go</span> <span>low.</span> <span>Chips</span> <span>ride</span> <span>on</span> <span class="accent">top.</span></div>
+    <div id="c6" class="clip cap" data-start="24.367" data-duration="3.983" data-track-index="3" style="left:133px;top:958px"><span>Change</span> <span>a</span> <span>number</span> <span>and</span> <span>it</span> <span class="accent">rebuilds.</span></div>
+    <div id="c7" class="clip cap" data-start="29.05" data-duration="7.8" data-track-index="3" style="left:133px;top:958px"><span>Carry</span> <span>something</span> <span>else?</span> <span>Add</span> <span>your</span> <span class="accent">own.</span></div>
+    <div id="c8" class="clip cap" data-start="37.1" data-duration="2.75" data-track-index="3" style="left:133px;top:958px"><span>It</span> <span>shows</span> <span>how</span> <span>many</span> <span>fit</span> <span class="accent">per</span> <span class="accent">layer.</span></div>
+    <div id="c9" class="clip cap" data-start="40.25" data-duration="7.45" data-track-index="3" style="left:133px;top:958px"><span>Your</span> <span>order,</span> <span>built</span> <span>into</span> <span class="accent">pallets.</span></div>
+    <div id="app-mark" class="clip" data-start="44.4" data-duration="3.3" data-track-index="4">
+      <div class="glyph"><i id="mk-a"></i><i id="mk-b"></i><b id="mk-c"></b></div>
+      <div class="word" id="mk-word">Loadout</div>
+    </div>
+  </div>
+
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    // the app blur-swaps in under the sheet as it carries the order across
+    tl.fromTo("#app-view", { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "power2.out" }, 1.183);
+    tl.fromTo("#app-rule", { opacity: 0, scaleX: 0.4 }, { opacity: 1, scaleX: 1, duration: 0.6, ease: "expo.out" }, 1.433);
+
+    // camera
+    tl.set("#app-cam", { x: 133.3, y: 0.0, scale: 0.8611 }, 0);
+    tl.to("#app-cam", { x: 0.0, y: -166.4, scale: 1.1194, duration: 2.2, ease: "power2.inOut" }, 2.55);
+    tl.to("#app-cam", { x: 0.0, y: -81.1, scale: 1.5069, duration: 1.05, ease: "power2.inOut" }, 6.15);
+    tl.to("#app-cam", { x: 0.0, y: -541.1, scale: 1.3778, duration: 1.1, ease: "power2.inOut" }, 9.233);
+    tl.to("#app-cam", { x: -433.8, y: -20.3, scale: 1.3778, duration: 1.05, ease: "power2.inOut" }, 13.9);
+    tl.to("#app-cam", { x: -394.7, y: -345.1, scale: 1.2056, duration: 1.15, ease: "power2.inOut" }, 19.883);
+    tl.to("#app-cam", { x: -560.0, y: -155.0, scale: 1.2917, duration: 1.05, ease: "power2.inOut" }, 23.517);
+    tl.to("#app-cam", { x: -642.7, y: -511.5, scale: 1.3347, duration: 1.1, ease: "power2.inOut" }, 27.9);
+    tl.to("#app-cam", { x: -890.7, y: -471.8, scale: 1.4639, duration: 0.9, ease: "power2.inOut" }, 30.717);
+    tl.to("#app-cam", { x: -1386.7, y: -832.5, scale: 1.7222, duration: 0.95, ease: "power2.inOut" }, 36.6);
+    tl.to("#app-cam", { x: 133.3, y: 0.0, scale: 0.8611, duration: 1.5, ease: "power2.inOut" }, 39.8);
+    tl.set("#app-cam", { x: 0.0, y: -232.5, scale: 1.0764 }, 41.8);
+    tl.to("#app-cam", { x: 0.0, y: -276.0, scale: 1.2228, duration: 3.867, ease: "power2.inOut" }, 43.483);
+
+    // captions
+    tl.fromTo("#c1 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 2.603);
+    tl.to("#c1 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 5.81);
+    tl.fromTo("#c2 span", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power3.out" }, 6.569999999999999);
+    tl.to("#c2 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 9.393);
+    tl.fromTo("#c3 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 10.353);
+    tl.to("#c3 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 13.96);
+    tl.fromTo("#c4 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 14.969999999999999);
+    tl.to("#c4 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 18.743);
+    tl.fromTo("#c5 span", { opacity: 0.18 }, { opacity: 1, duration: 0.18, ease: "power2.out", stagger: 0.09 }, 20.653);
+    tl.to("#c5 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 23.427);
+    tl.fromTo("#c6 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 24.387);
+    tl.to("#c6 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 28.11);
+    tl.fromTo("#c7 span", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power3.out" }, 29.07);
+    tl.to("#c7 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 36.61);
+    tl.fromTo("#c8 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 37.120000000000005);
+    tl.to("#c8 span", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in", stagger: 0.015 }, 39.61);
+    tl.fromTo("#c9 span", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: "power4.out", stagger: 0.07 }, 40.27);
+
+    // the mark: the plank lands, then two cases drop onto it, then the name
+    tl.fromTo("#mk-c", { opacity: 0, scaleX: 0.6 }, { opacity: 1, scaleX: 1, duration: 0.3, ease: "expo.out" }, 44.42);
+    tl.fromTo("#mk-b", { opacity: 0, y: -26 }, { opacity: .65, y: 0, duration: 0.42, ease: "back.out(1.4)" }, 44.54);
+    tl.fromTo("#mk-a", { opacity: 0, y: -26 }, { opacity: 1, y: 0, duration: 0.42, ease: "back.out(1.4)" }, 44.68);
+    tl.fromTo("#mk-word", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power3.out" }, 44.9);
+
+    window.__timelines["app"] = tl;
+  </script>
+</template>
