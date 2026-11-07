@@ -13,13 +13,22 @@ load across pallets at the height and weight limits.
    each a grid of the case in one orientation, and keep the split that fits the most cases
    (10 cases of 24 × 500 mL instead of the 9 a plain grid gives).
 2. **Full layers first.** Every product fills as many whole layers as it can.
-3. **Mixed layers.** Leftover cases of a similar height share layers, placed with MaxRects
-   bin packing (best short side fit, rotation allowed).
-4. **Stacking.** Heaviest layers first, full layers before mixed, crushable products last.
-   A new pallet starts whenever the next layer would pass 60 in or 2,200 lb.
+3. **Part and mixed layers.** Leftover cases of one product take the spots of its pattern
+   nearest the middle of the skid. Leftovers of several products with nearly the same height
+   share a layer, placed with MaxRects bin packing and centred, so every layer has a flat top.
+4. **Stacking like a loader.** Start from the fewest pallets the totals allow. Each sturdy
+   layer goes on the shortest pallet it fits on, which keeps every pallet heavy at the bottom
+   and spreads the headroom evenly. Crushable products (chips) then ride on top of the drink
+   pallets. If anything does not fit under 60 in and 2,200 lb, try again with one more pallet.
 
 The tests check that every case is placed once, nothing overlaps or leaves the deck, every
-pallet stays under its limits, nothing heavy sits on chips, and results are deterministic.
+pallet stays under its limits, nothing heavy sits on chips, chips never start a pallet when
+there is room on top of drinks, pallets stay heavy at the bottom, and results are deterministic.
+
+## Your own products
+
+Use **Add a product** to enter a name, category, case size and weight. The form shows how many
+fit per layer before you add it. Products you add are saved in your browser.
 
 ## Run it
 

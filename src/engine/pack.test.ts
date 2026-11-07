@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LIMITS, PALLET, layerPattern, pack, type Box } from "./pack";
 import { PRODUCTS, PRODUCT_BY_ID } from "./products";
+import { PRESETS } from "../presets";
 
 const p = (id: string) => PRODUCT_BY_ID[id];
 const intersects = (a: Box, b: Box) =>
@@ -89,6 +90,35 @@ describe("pack", () => {
     }
   });
 
+  it("rides chips on top of drinks instead of starting a pallet with them", () => {
+    for (const preset of PRESETS) {
+      const res = pack(PRODUCTS.map((prod) => ({ product: prod, qty: preset.qty[prod.id] ?? 0 })));
+      for (const pl of res.pallets) {
+        const chips = pl.boxes.filter((b) => b.productId === "chips");
+        const drinks = pl.boxes.filter((b) => b.productId !== "chips");
+        if (chips.length) expect(drinks.length, `${preset.name}: a pallet holds only chips`).toBeGreaterThan(0);
+        for (const c of chips) expect(c.y, `${preset.name}: chips on the deck`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("keeps every pallet heavy at the bottom", () => {
+    for (const pl of pack(bigOrder()).pallets) {
+      const sturdy = pl.layers.filter((l) => !l.productIds.includes("chips"));
+      const avg = sturdy.map((l) => {
+        const boxes = pl.boxes.filter((b) => Math.abs(b.y - l.y) < 1e-6);
+        return boxes.reduce((s, b) => s + b.weight, 0) / boxes.length;
+      });
+      const fullAvg = avg.filter((_, i) => sturdy[i].kind === "full");
+      for (let i = 1; i < fullAvg.length; i++) expect(fullAvg[i]).toBeLessThanOrEqual(fullAvg[i - 1] + 1e-6);
+    }
+  });
+
+  it("spreads the load so pallets come out close in height", () => {
+    const hs = pack(bigOrder()).pallets.map((pl) => pl.loadHeight);
+    expect(Math.max(...hs) - Math.min(...hs)).toBeLessThan(20);
+  });
+
   it("puts heavier full layers lower than lighter ones", () => {
     const pl = pack([
       { product: p("fridge12"), qty: 40 },
@@ -106,6 +136,17 @@ describe("pack", () => {
 
   it("is deterministic", () => {
     expect(pack(bigOrder())).toEqual(pack(bigOrder()));
+  });
+
+  it("packs a product the user adds", () => {
+    const iced = { id: "custom-iced", name: "Iced tea", detail: "", category: "Tea", length: 13, width: 9, height: 7.5, weight: 21, color: "#fff" };
+    const res = pack([{ product: iced, qty: 33 }, { product: p("water"), qty: 12 }]);
+    expect(res.pallets.flatMap((pl) => pl.boxes).filter((b) => b.productId === "custom-iced").length).toBe(33);
+  });
+
+  it("refuses a case that is bigger than the skid", () => {
+    const huge = { id: "huge", name: "Huge", detail: "", category: "X", length: 60, width: 50, height: 10, weight: 10, color: "#fff" };
+    expect(() => pack([{ product: huge, qty: 1 }])).toThrow();
   });
 
   it("returns no pallets for an empty order", () => {

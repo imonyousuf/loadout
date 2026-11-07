@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Scene, { type Hover } from "./Scene";
 import { LIMITS, layerPattern, pack } from "./engine/pack";
-import { PRODUCTS, PRODUCT_BY_ID } from "./engine/products";
+import { PRODUCTS, type Product } from "./engine/products";
+import AddProduct from "./AddProduct";
 import { PRESETS } from "./presets";
 
 const fmt = (n: number, d = 0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -28,6 +29,17 @@ function useTween(value: number, ms = 450) {
   return shown;
 }
 
+const CUSTOM_KEY = "loadout.customProducts";
+function loadCustom(): Product[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_KEY);
+    const list = raw ? (JSON.parse(raw) as Product[]) : [];
+    return Array.isArray(list) ? list.filter((p) => p && p.id && p.length > 0 && p.width > 0 && p.height > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
 const reduceMotionQuery = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
 export default function App() {
@@ -40,8 +52,22 @@ export default function App() {
   const [hover, setHover] = useState<Hover | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const reduceMotion = !!reduceMotionQuery?.matches;
+  const [custom, setCustom] = useState<Product[]>(loadCustom);
+  const [adding, setAdding] = useState(false);
 
-  const result = useMemo(() => pack(PRODUCTS.map((p) => ({ product: p, qty: qty[p.id] ?? 0 }))), [qty]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom));
+    } catch {
+      /* storage blocked: custom products last for this visit only */
+    }
+  }, [custom]);
+
+  const allProducts = useMemo(() => [...PRODUCTS, ...custom], [custom]);
+  const byId = useMemo(() => Object.fromEntries(allProducts.map((p) => [p.id, p])) as Record<string, Product>, [allProducts]);
+  const categories = useMemo(() => [...new Set(allProducts.map((p) => p.category))], [allProducts]);
+
+  const result = useMemo(() => pack(allProducts.map((p) => ({ product: p, qty: qty[p.id] ?? 0 }))), [qty, allProducts]);
   const pallets = result.pallets;
   const idx = Math.min(palletIdx, Math.max(0, pallets.length - 1));
   const pallet = pallets[idx] ?? null;
@@ -93,6 +119,7 @@ export default function App() {
         <section className="stage" aria-label="3D view of the built pallet">
           <Scene
             pallet={pallet}
+            products={byId}
             buildId={`${idx}:${buildRun}`}
             focusLayer={focusLayer}
             focusProduct={focusProduct}
@@ -166,9 +193,9 @@ export default function App() {
 
           {hovered && (
             <div className="tip" role="status">
-              <span className="sw" style={{ background: PRODUCT_BY_ID[hovered.productId].color }} />
+              <span className="sw" style={{ background: byId[hovered.productId].color }} />
               <div>
-                <b>{PRODUCT_BY_ID[hovered.productId].name}</b>
+                <b>{byId[hovered.productId].name}</b>
                 <span>
                   Layer {hover!.layer + 1} · {fmt(hovered.weight, 1)} lb · {fmt(hovered.dx, 1)} × {fmt(hovered.dz, 1)} in
                 </span>
@@ -203,11 +230,11 @@ export default function App() {
                       <span className="ln">L{l.i + 1}</span>
                       <span className="lbar">
                         {counts.map((c) => (
-                          <i key={c.id} style={{ flex: c.n, background: PRODUCT_BY_ID[c.id].color }} />
+                          <i key={c.id} style={{ flex: c.n, background: byId[c.id].color }} />
                         ))}
                       </span>
                       <span className="lmeta">
-                        {l.count} · {l.kind === "full" ? "full" : "mixed"}
+                        {l.count} · {l.kind}
                       </span>
                     </li>
                   );
@@ -232,40 +259,91 @@ export default function App() {
             ))}
           </div>
 
-          <ul className="lines">
-            {PRODUCTS.map((p) => {
-              const per = layerPattern(p.length, p.width).length;
-              const v = qty[p.id] ?? 0;
-              return (
-                <li key={p.id} onMouseEnter={() => setFocusProduct(v ? p.id : null)} onMouseLeave={() => setFocusProduct(null)} className={v ? "" : "zero"}>
-                  <span className="sw" style={{ background: p.color }} />
-                  <div className="pi">
-                    <b>{p.name}</b>
-                    <span>{p.detail}</span>
-                    <span className="pm">
-                      {per} per layer · {p.weight} lb
-                    </span>
-                  </div>
-                  <div className="step">
-                    <button type="button" onClick={() => set(p.id, v - 1)} aria-label={`One less ${p.name}`}>
-                      −
-                    </button>
-                    <input
-                      id={`qty-${p.id}`}
-                      inputMode="numeric"
-                      value={v}
-                      aria-label={`${p.name} cases`}
-                      onChange={(e) => set(p.id, Number(e.target.value.replace(/\D/g, "")))}
-                      onFocus={(e) => e.target.select()}
-                    />
-                    <button type="button" onClick={() => set(p.id, v + 1)} aria-label={`One more ${p.name}`}>
-                      +
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          {categories.map((cat) => {
+            const items = allProducts.filter((p) => p.category === cat);
+            const cases = items.reduce((n, p) => n + (qty[p.id] ?? 0), 0);
+            return (
+              <section className="cat" key={cat} aria-label={cat}>
+                <div className="ch">
+                  <span>{cat}</span>
+                  <span>{cases ? `${cases} cases` : ""}</span>
+                </div>
+                <ul className="lines">
+                  {items.map((p) => {
+                    const per = layerPattern(p.length, p.width).length;
+                    const v = qty[p.id] ?? 0;
+                    const isCustom = !PRODUCTS.some((x) => x.id === p.id);
+                    return (
+                      <li key={p.id} onMouseEnter={() => setFocusProduct(v ? p.id : null)} onMouseLeave={() => setFocusProduct(null)} className={v ? "" : "zero"}>
+                        <span className="sw" style={{ background: p.color }} />
+                        <div className="pi">
+                          <b>
+                            {p.name}
+                            {isCustom && (
+                              <button
+                                type="button"
+                                className="del"
+                                aria-label={`Remove ${p.name}`}
+                                onClick={() => {
+                                  setCustom((c) => c.filter((x) => x.id !== p.id));
+                                  setQty((q) => {
+                                    const n = { ...q };
+                                    delete n[p.id];
+                                    return n;
+                                  });
+                                }}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </b>
+                          <span>{p.detail}</span>
+                          <span className="pm">
+                            {per} per layer · {p.weight} lb
+                          </span>
+                        </div>
+                        <div className="step">
+                          <button type="button" onClick={() => set(p.id, v - 1)} aria-label={`One less ${p.name}`}>
+                            −
+                          </button>
+                          <input
+                            id={`qty-${p.id}`}
+                            inputMode="numeric"
+                            value={v}
+                            aria-label={`${p.name} cases`}
+                            onChange={(e) => set(p.id, Number(e.target.value.replace(/\D/g, "")))}
+                            onFocus={(e) => e.target.select()}
+                          />
+                          <button type="button" onClick={() => set(p.id, v + 1)} aria-label={`One more ${p.name}`}>
+                            +
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+
+          {adding ? (
+            <AddProduct
+              categories={categories}
+              taken={allProducts.map((p) => p.name.toLowerCase())}
+              colorIndex={custom.length}
+              onCancel={() => setAdding(false)}
+              onAdd={(p, startQty) => {
+                setCustom((c) => [...c, p]);
+                setQty((q) => ({ ...q, [p.id]: startQty }));
+                setPreset(null);
+                setAdding(false);
+              }}
+            />
+          ) : (
+            <button type="button" className="addbtn" onClick={() => setAdding(true)}>
+              <span aria-hidden="true">+</span> Add a product
+            </button>
+          )}
 
           <div className="totals">
             <div>

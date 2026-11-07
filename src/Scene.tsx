@@ -3,7 +3,7 @@ import { Edges, Line, OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { LIMITS, PALLET, type Pallet } from "./engine/pack";
-import { PRODUCT_BY_ID } from "./engine/products";
+import type { Product } from "./engine/products";
 
 const ACCENT = "#ff5b1f";
 const DECK = PALLET.deckHeight;
@@ -16,6 +16,8 @@ export interface Hover {
 
 interface Props {
   pallet: Pallet | null;
+  /** every product, built-in and user-added, by id */
+  products: Record<string, Product>;
   /** changes whenever the whole pallet should rebuild from scratch */
   buildId: string;
   focusLayer: number | null;
@@ -164,7 +166,7 @@ const easeOutBack = (t: number) => {
 };
 
 /** The cases. New cases drop in one after another; cases that did not move stay put. */
-function Cases({ pallet, buildId, focusLayer, focusProduct, onHover, reduceMotion }: Props) {
+function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, reduceMotion }: Props) {
   const boxes = pallet?.boxes ?? [];
   const layerOf = useMemo(() => {
     if (!pallet) return [] as number[];
@@ -232,7 +234,8 @@ function Cases({ pallet, buildId, focusLayer, focusProduct, onHover, reduceMotio
   return (
     <group position={[-PALLET.length / 2, 0, -PALLET.width / 2]}>
       {boxes.map((b, i) => {
-        const p = PRODUCT_BY_ID[b.productId];
+        const p = products[b.productId];
+        if (!p) return null;
         return (
           <mesh
             key={keys[i] + "#" + i}

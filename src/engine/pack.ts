@@ -4,8 +4,8 @@ import type { Product } from "./products";
 export const PALLET = { length: 48, width: 40, deckHeight: 5.5, weight: 45 } as const;
 /** Limits for one built pallet (load only, deck excluded). */
 export const LIMITS = { maxLoadHeight: 60, maxLoadWeight: 2200 } as const;
-/** Cases whose heights differ by at most this much may share a mixed layer. */
-const HEIGHT_TOLERANCE = 1.5;
+/** Cases whose heights differ by at most this much may share a mixed layer, so its top stays flat enough to stack on. */
+const HEIGHT_TOLERANCE = 0.6;
 
 export interface OrderLine {
   product: Product;
@@ -28,7 +28,8 @@ export interface Box {
 }
 
 export interface Layer {
-  kind: "full" | "mixed";
+  /** full: a whole pattern of one product; part: some cases of one product; mixed: several products */
+  kind: "full" | "part" | "mixed";
   height: number;
   weight: number;
   fragile: boolean;
@@ -157,8 +158,9 @@ const contains = (o: Rect, r: Rect) => r.x >= o.x - 1e-9 && r.z >= o.z - 1e-9 &&
  *
  * 1. Every product gets its best full-layer pattern; whole layers come first.
  * 2. Leftover cases share mixed layers with cases of a similar height (MaxRects).
- * 3. Layers are stacked heaviest first, full layers before mixed ones, crushable products last,
- *    starting a new pallet whenever the next layer would break the height or weight limit.
+ * 3. Layers go onto as few pallets as the height and weight limits allow, the way a loader
+ *    builds them: heavy layers at the bottom of every pallet, drink layers spread evenly so
+ *    each pallet keeps headroom, and crushable products riding on top of that headroom.
  */
 export function pack(order: OrderLine[]): PackResult {
   const lines = order.filter((l) => l.qty > 0);
@@ -194,31 +196,78 @@ export function pack(order: OrderLine[]): PackResult {
     ...mixed.filter((l) => l.fragile).sort(byWeight),
   ];
 
-  const pallets: Pallet[] = [];
-  let cur: Pallet | null = null;
-  let seq = 0;
-  for (const layer of stackOrder) {
-    if (!cur || cur.loadHeight + layer.height > LIMITS.maxLoadHeight + 1e-9 || cur.loadWeight + layer.weight > LIMITS.maxLoadWeight + 1e-9) {
-      cur = { boxes: [], layers: [], loadHeight: 0, loadWeight: 0, cubeUse: 0 };
-      pallets.push(cur);
-      seq = 0;
-    }
-    const y = cur.loadHeight;
-    for (const b of layer.boxes) cur.boxes.push({ ...b, y, seq: seq++ });
-    cur.layers.push({ y, height: layer.height, kind: layer.kind, count: layer.boxes.length, productIds: [...new Set(layer.boxes.map((b) => b.productId))] });
-    cur.loadHeight += layer.height;
-    cur.loadWeight += layer.weight;
-  }
-  for (const p of pallets) {
-    const vol = p.boxes.reduce((s, b) => s + b.dx * b.dz * b.dy, 0);
-    p.cubeUse = p.loadHeight ? vol / (PALLET.length * PALLET.width * p.loadHeight) : 0;
-  }
-
+  const pallets = stackLayers(stackOrder);
   return {
     pallets,
     totalCases: lines.reduce((s, l) => s + l.qty, 0),
     totalWeight: lines.reduce((s, l) => s + l.qty * l.product.weight, 0),
   };
+}
+
+/**
+ * Put ordered layers onto pallets.
+ * Starting from the fewest pallets the totals could fit on, each sturdy layer goes on the
+ * shortest pallet it fits on, which keeps every pallet sorted heavy-to-light and leaves even
+ * headroom. Crushable layers then go on the pallet with the most room left. If anything does
+ * not fit, try again with one more pallet.
+ */
+function stackLayers(layers: Layer[]): Pallet[] {
+  if (!layers.length) return [];
+  const sturdy = layers.filter((l) => !l.fragile);
+  const soft = layers.filter((l) => l.fragile);
+  const totalH = layers.reduce((s, l) => s + l.height, 0);
+  const totalW = layers.reduce((s, l) => s + l.weight, 0);
+  const start = Math.max(1, Math.ceil(totalH / LIMITS.maxLoadHeight - 1e-9), Math.ceil(totalW / LIMITS.maxLoadWeight - 1e-9));
+
+  for (let n = start; n <= layers.length; n++) {
+    const stacks: { layers: Layer[]; h: number; w: number }[] = Array.from({ length: n }, () => ({ layers: [], h: 0, w: 0 }));
+    const fits = (s: (typeof stacks)[number], l: Layer) => s.h + l.height <= LIMITS.maxLoadHeight + 1e-9 && s.w + l.weight <= LIMITS.maxLoadWeight + 1e-9;
+    let ok = true;
+    for (const l of sturdy) {
+      const target = stacks.filter((s) => fits(s, l)).sort((a, b) => a.h - b.h || a.w - b.w)[0];
+      if (!target) {
+        ok = false;
+        break;
+      }
+      target.layers.push(l);
+      target.h += l.height;
+      target.w += l.weight;
+    }
+    if (ok) {
+      for (const l of soft) {
+        // prefer a pallet that already carries drinks, then the one with the most headroom
+        const target = stacks
+          .filter((s) => fits(s, l))
+          .sort((a, b) => Number(b.layers.some((x) => !x.fragile)) - Number(a.layers.some((x) => !x.fragile)) || a.h - b.h)[0];
+        if (!target) {
+          ok = false;
+          break;
+        }
+        target.layers.push(l);
+        target.h += l.height;
+        target.w += l.weight;
+      }
+    }
+    if (!ok) continue;
+
+    return stacks
+      .filter((s) => s.layers.length)
+      .map((s) => {
+        const pallet: Pallet = { boxes: [], layers: [], loadHeight: 0, loadWeight: 0, cubeUse: 0 };
+        let seq = 0;
+        for (const layer of s.layers) {
+          const y = pallet.loadHeight;
+          for (const b of layer.boxes) pallet.boxes.push({ ...b, y, seq: seq++ });
+          pallet.layers.push({ y, height: layer.height, kind: layer.kind, count: layer.boxes.length, productIds: [...new Set(layer.boxes.map((b) => b.productId))] });
+          pallet.loadHeight += layer.height;
+          pallet.loadWeight += layer.weight;
+        }
+        const vol = pallet.boxes.reduce((t, b) => t + b.dx * b.dz * b.dy, 0);
+        pallet.cubeUse = pallet.loadHeight ? vol / (PALLET.length * PALLET.width * pallet.loadHeight) : 0;
+        return pallet;
+      });
+  }
+  throw new Error("Could not fit the order on pallets");
 }
 
 /** Pack leftover cases into as few mixed layers as possible, grouping similar heights. */
@@ -240,6 +289,23 @@ function mixedLayers(cases: Product[]): Layer[] {
         layer.weight += p.weight;
         queue.splice(i, 1);
       } else i++;
+    }
+    const ids = new Set(layer.boxes.map((b) => b.productId));
+    if (ids.size === 1) {
+      // one product: take the spots of its full pattern nearest the middle, so the part layer
+      // sits as one tight block over the centre of the skid
+      const prod = first.id === layer.boxes[0].productId ? first : cases.find((c) => c.id === layer.boxes[0].productId)!;
+      const spots = layerPattern(prod.length, prod.width)
+        .map((r) => ({ r, d: Math.hypot(r.x + r.w / 2 - PALLET.length / 2, r.z + r.d / 2 - PALLET.width / 2) }))
+        .sort((a, b) => a.d - b.d || a.r.x - b.r.x || a.r.z - b.r.z)
+        .slice(0, layer.boxes.length)
+        .map((s) => s.r);
+      layer.kind = "part";
+      layer.boxes = layer.boxes.map((b, k) => ({ ...b, x: spots[k].x, z: spots[k].z, dx: spots[k].w, dz: spots[k].d }));
+    } else {
+      // several products: centre the group on the deck
+      const c = centre(layer.boxes.map((b) => ({ x: b.x, z: b.z, w: b.dx, d: b.dz })), PALLET.length, PALLET.width);
+      layer.boxes = layer.boxes.map((b, k) => ({ ...b, x: c[k].x, z: c[k].z }));
     }
     layers.push(layer);
   }
