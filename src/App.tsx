@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Scene, { type Hover } from "./Scene";
-import { LIMITS, layerPattern, pack } from "./engine/pack";
+import { LIMITS, pack, perLayer, type PackResult } from "./engine/pack";
 import { PRODUCTS, type Product } from "./engine/products";
 import AddProduct from "./AddProduct";
+import Tour from "./Tour";
 import { PRESETS } from "./presets";
 
 const fmt = (n: number, d = 0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -29,50 +30,107 @@ function useTween(value: number, ms = 450) {
   return shown;
 }
 
+const store = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, value: string) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* storage blocked: the setting lasts for this visit only */
+    }
+  },
+};
+
 const CUSTOM_KEY = "loadout.customProducts";
+const TOUR_KEY = "loadout.tourSeen";
+
+/** A product saved by an earlier visit, checked so a bad entry can never stop the app. */
+function isProduct(x: unknown): x is Product {
+  if (!x || typeof x !== "object") return false;
+  const p = x as Product;
+  const positive = [p.length, p.width, p.height, p.weight].every((n) => typeof n === "number" && Number.isFinite(n) && n > 0);
+  return (
+    typeof p.id === "string" &&
+    typeof p.name === "string" &&
+    typeof p.category === "string" &&
+    typeof p.color === "string" &&
+    positive &&
+    p.height <= LIMITS.maxLoadHeight &&
+    p.weight <= LIMITS.maxLoadWeight &&
+    perLayer(p) > 0
+  );
+}
+
 function loadCustom(): Product[] {
   try {
-    const raw = localStorage.getItem(CUSTOM_KEY);
-    const list = raw ? (JSON.parse(raw) as Product[]) : [];
-    return Array.isArray(list) ? list.filter((p) => p && p.id && p.length > 0 && p.width > 0 && p.height > 0) : [];
+    const list = JSON.parse(store.get(CUSTOM_KEY) ?? "[]");
+    return Array.isArray(list) ? list.filter(isProduct).map((p) => ({ ...p, detail: typeof p.detail === "string" ? p.detail : "" })) : [];
   } catch {
     return [];
   }
 }
 
+const EMPTY: PackResult = { pallets: [], totalCases: 0, totalWeight: 0 };
 const reduceMotionQuery = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+/** Hover previews are for a mouse; on touch a tap would leave the preview stuck on. */
+const mouse = (fn: () => void) => (e: React.PointerEvent) => {
+  if (e.pointerType === "mouse") fn();
+};
 
 export default function App() {
   const [qty, setQty] = useState<Record<string, number>>(() => ({ ...PRESETS[0].qty }));
   const [preset, setPreset] = useState<string | null>(PRESETS[0].id);
   const [palletIdx, setPalletIdx] = useState(0);
   const [buildRun, setBuildRun] = useState(0);
-  const [focusLayer, setFocusLayer] = useState<number | null>(null);
+  const [pinLayer, setPinLayer] = useState<number | null>(null);
+  const [hoverLayer, setHoverLayer] = useState<number | null>(null);
   const [focusProduct, setFocusProduct] = useState<string | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const reduceMotion = !!reduceMotionQuery?.matches;
   const [custom, setCustom] = useState<Product[]>(loadCustom);
   const [adding, setAdding] = useState(false);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [tour, setTour] = useState<null | "first" | "asked">(() => (store.get(TOUR_KEY) ? null : "first"));
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom));
-    } catch {
-      /* storage blocked: custom products last for this visit only */
-    }
-  }, [custom]);
+  useEffect(() => store.set(CUSTOM_KEY, JSON.stringify(custom)), [custom]);
 
   const allProducts = useMemo(() => [...PRODUCTS, ...custom], [custom]);
   const byId = useMemo(() => Object.fromEntries(allProducts.map((p) => [p.id, p])) as Record<string, Product>, [allProducts]);
   const categories = useMemo(() => [...new Set(allProducts.map((p) => p.category))], [allProducts]);
 
-  const result = useMemo(() => pack(allProducts.map((p) => ({ product: p, qty: qty[p.id] ?? 0 }))), [qty, allProducts]);
+  // typing stays instant; the build catches up a moment later on very large orders
+  const order = useDeferredValue(qty);
+  const { result, error } = useMemo(() => {
+    try {
+      return { result: pack(allProducts.map((p) => ({ product: p, qty: order[p.id] ?? 0 }))), error: null };
+    } catch (e) {
+      return { result: EMPTY, error: e instanceof Error ? e.message : "This order could not be built." };
+    }
+  }, [order, allProducts]);
   const pallets = result.pallets;
   const idx = Math.min(palletIdx, Math.max(0, pallets.length - 1));
   const pallet = pallets[idx] ?? null;
 
-  useEffect(() => setFocusLayer(null), [idx]);
+  // a new build makes old layer and case picks meaningless
+  useEffect(() => {
+    setPinLayer(null);
+    setHoverLayer(null);
+    setHover(null);
+  }, [pallet, buildRun]);
+
+  useEffect(() => {
+    if (!justAdded) return;
+    document.getElementById(`line-${justAdded}`)?.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    const t = window.setTimeout(() => setJustAdded(null), 1800);
+    return () => window.clearTimeout(t);
+  }, [justAdded, reduceMotion]);
 
   const set = (id: string, v: number) => {
     setPreset(null);
@@ -85,6 +143,14 @@ export default function App() {
     setPalletIdx(0);
     setBuildRun((n) => n + 1);
   };
+  const closeTour = () => {
+    store.set(TOUR_KEY, "1");
+    setTour(null);
+  };
+
+  const focusLayer = hoverLayer ?? pinLayer;
+  const onPallet = (id: string | null) => !!id && !!pallet?.boxes.some((b) => b.productId === id);
+  const shownProduct = onPallet(focusProduct) ? focusProduct : null;
 
   const hPct = pallet ? pallet.loadHeight / LIMITS.maxLoadHeight : 0;
   const wPct = pallet ? pallet.loadWeight / LIMITS.maxLoadWeight : 0;
@@ -110,9 +176,15 @@ export default function App() {
           <span className="word">Loadout</span>
           <span className="ver">Pallet builder for DSD orders</span>
         </div>
-        <a className="by" href="https://github.com/imonyousuf" target="_blank" rel="noopener">
-          Built by Imon Yousuf
-        </a>
+        <div className="topr">
+          <button type="button" className="howbtn" onClick={() => setTour("asked")}>
+            <span className="play" aria-hidden="true" />
+            How it works
+          </button>
+          <a className="by" href="https://github.com/imonyousuf" target="_blank" rel="noopener">
+            Built by Imon Yousuf
+          </a>
+        </div>
       </header>
 
       <main className="layout">
@@ -122,7 +194,7 @@ export default function App() {
             products={byId}
             buildId={`${idx}:${buildRun}`}
             focusLayer={focusLayer}
-            focusProduct={focusProduct}
+            focusProduct={shownProduct}
             onHover={setHover}
             autoRotate={autoRotate && !hover && focusLayer === null}
             reduceMotion={reduceMotion}
@@ -155,30 +227,35 @@ export default function App() {
                 {fmt(tCube)}
                 <small>%</small>
               </span>
-              <Meter pct={(pallet?.cubeUse ?? 0)} good />
+              <Meter pct={pallet?.cubeUse ?? 0} good />
             </div>
           </div>
 
           {pallets.length > 0 && (
             <nav className="tabs" aria-label="Pallets">
-              {pallets.map((p, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={i === idx ? "on" : ""}
-                  onClick={() => {
-                    setPalletIdx(i);
-                    setBuildRun((n) => n + 1);
-                  }}
-                  aria-label={`Pallet ${i + 1}: ${p.boxes.length} cases`}
-                >
-                  <span className="tbar">
-                    <i style={{ height: `${(p.loadHeight / LIMITS.maxLoadHeight) * 100}%` }} />
-                  </span>
-                  <span className="tl">P{i + 1}</span>
-                  <span className="tn">{p.boxes.length}</span>
-                </button>
-              ))}
+              {pallets.map((p, i) => {
+                const has = !!focusProduct && p.boxes.some((b) => b.productId === focusProduct);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={(i === idx ? "on" : "") + (has ? " has" : "")}
+                    style={has ? ({ "--c": byId[focusProduct!]?.color } as React.CSSProperties) : undefined}
+                    onClick={() => {
+                      setPalletIdx(i);
+                      setBuildRun((n) => n + 1);
+                    }}
+                    aria-label={`Pallet ${i + 1}: ${p.boxes.length} cases, ${fmt(p.loadHeight, 1)} inches`}
+                    aria-current={i === idx ? "true" : undefined}
+                  >
+                    <span className="tbar">
+                      <i style={{ height: `${(p.loadHeight / LIMITS.maxLoadHeight) * 100}%` }} />
+                    </span>
+                    <span className="tl">P{i + 1}</span>
+                    <span className="tn">{p.boxes.length} cs</span>
+                  </button>
+                );
+              })}
             </nav>
           )}
 
@@ -191,7 +268,7 @@ export default function App() {
             </button>
           </div>
 
-          {hovered && (
+          {hovered && byId[hovered.productId] && (
             <div className="tip" role="status">
               <span className="sw" style={{ background: byId[hovered.productId].color }} />
               <div>
@@ -205,8 +282,17 @@ export default function App() {
 
           {!pallet && (
             <div className="empty">
-              <b>Nothing to build yet</b>
-              <span>Add cases on the left, or load an example order.</span>
+              {error ? (
+                <>
+                  <b>This order can’t be built</b>
+                  <span>{error}</span>
+                </>
+              ) : (
+                <>
+                  <b>Nothing to build yet</b>
+                  <span>Set some cases, or pick an example order.</span>
+                </>
+              )}
             </div>
           )}
 
@@ -219,23 +305,28 @@ export default function App() {
               <ol>
                 {layersTopFirst.map((l) => {
                   const counts = l.productIds.map((id) => ({ id, n: pallet.boxes.filter((b) => Math.abs(b.y - l.y) < 1e-6 && b.productId === id).length }));
+                  const names = l.productIds.map((id) => byId[id]?.name ?? id).join(" and ");
                   return (
-                    <li
-                      key={l.i}
-                      className={focusLayer === l.i ? "on" : ""}
-                      onMouseEnter={() => setFocusLayer(l.i)}
-                      onMouseLeave={() => setFocusLayer(null)}
-                      onClick={() => setFocusLayer((f) => (f === l.i ? null : l.i))}
-                    >
-                      <span className="ln">L{l.i + 1}</span>
-                      <span className="lbar">
-                        {counts.map((c) => (
-                          <i key={c.id} style={{ flex: c.n, background: byId[c.id].color }} />
-                        ))}
-                      </span>
-                      <span className="lmeta">
-                        {l.count} · {l.kind}
-                      </span>
+                    <li key={l.i}>
+                      <button
+                        type="button"
+                        className={focusLayer === l.i ? "on" : ""}
+                        aria-pressed={pinLayer === l.i}
+                        aria-label={`Layer ${l.i + 1}: ${l.count} cases of ${names}`}
+                        onPointerEnter={mouse(() => setHoverLayer(l.i))}
+                        onPointerLeave={mouse(() => setHoverLayer(null))}
+                        onClick={() => setPinLayer((f) => (f === l.i ? null : l.i))}
+                      >
+                        <span className="ln">L{l.i + 1}</span>
+                        <span className="lbar">
+                          {counts.map((c) => (
+                            <i key={c.id} style={{ flex: c.n, background: byId[c.id]?.color }} />
+                          ))}
+                        </span>
+                        <span className="lmeta">
+                          {l.count} · {l.kind}
+                        </span>
+                      </button>
                     </li>
                   );
                 })}
@@ -252,7 +343,7 @@ export default function App() {
 
           <div className="presets" role="group" aria-label="Example orders">
             {PRESETS.map((p) => (
-              <button key={p.id} type="button" className={preset === p.id ? "on" : ""} onClick={() => loadPreset(p.id)}>
+              <button key={p.id} type="button" className={preset === p.id ? "on" : ""} aria-pressed={preset === p.id} onClick={() => loadPreset(p.id)}>
                 <b>{p.name}</b>
                 <span>{p.note}</span>
               </button>
@@ -266,15 +357,21 @@ export default function App() {
               <section className="cat" key={cat} aria-label={cat}>
                 <div className="ch">
                   <span>{cat}</span>
-                  <span>{cases ? `${cases} cases` : ""}</span>
+                  <span>{cases ? `${fmt(cases)} cases` : ""}</span>
                 </div>
                 <ul className="lines">
                   {items.map((p) => {
-                    const per = layerPattern(p.length, p.width).length;
+                    const per = perLayer(p);
                     const v = qty[p.id] ?? 0;
                     const isCustom = !PRODUCTS.some((x) => x.id === p.id);
                     return (
-                      <li key={p.id} onMouseEnter={() => setFocusProduct(v ? p.id : null)} onMouseLeave={() => setFocusProduct(null)} className={v ? "" : "zero"}>
+                      <li
+                        key={p.id}
+                        id={`line-${p.id}`}
+                        onPointerEnter={mouse(() => setFocusProduct(v ? p.id : null))}
+                        onPointerLeave={mouse(() => setFocusProduct(null))}
+                        className={(v ? "" : "zero") + (justAdded === p.id ? " new" : "")}
+                      >
                         <span className="sw" style={{ background: p.color }} />
                         <div className="pi">
                           <b>
@@ -285,6 +382,7 @@ export default function App() {
                                 className="del"
                                 aria-label={`Remove ${p.name}`}
                                 onClick={() => {
+                                  setFocusProduct(null);
                                   setCustom((c) => c.filter((x) => x.id !== p.id));
                                   setQty((q) => {
                                     const n = { ...q };
@@ -299,11 +397,11 @@ export default function App() {
                           </b>
                           <span>{p.detail}</span>
                           <span className="pm">
-                            {per} per layer · {p.weight} lb
+                            {per} per layer · {fmt(p.weight, p.weight % 1 ? 1 : 0)} lb
                           </span>
                         </div>
                         <div className="step">
-                          <button type="button" onClick={() => set(p.id, v - 1)} aria-label={`One less ${p.name}`}>
+                          <button type="button" onClick={() => set(p.id, v - 1)} aria-label={`One less ${p.name}`} disabled={v === 0}>
                             −
                           </button>
                           <input
@@ -313,8 +411,13 @@ export default function App() {
                             aria-label={`${p.name} cases`}
                             onChange={(e) => set(p.id, Number(e.target.value.replace(/\D/g, "")))}
                             onFocus={(e) => e.target.select()}
+                            onKeyDown={(e) => {
+                              if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                              e.preventDefault();
+                              set(p.id, v + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1));
+                            }}
                           />
-                          <button type="button" onClick={() => set(p.id, v + 1)} aria-label={`One more ${p.name}`}>
+                          <button type="button" onClick={() => set(p.id, v + 1)} aria-label={`One more ${p.name}`} disabled={v >= 999}>
                             +
                           </button>
                         </div>
@@ -337,6 +440,7 @@ export default function App() {
                 setQty((q) => ({ ...q, [p.id]: startQty }));
                 setPreset(null);
                 setAdding(false);
+                setJustAdded(p.id);
               }}
             />
           ) : (
@@ -361,14 +465,22 @@ export default function App() {
                 setQty({});
                 setPreset(null);
               }}
+              disabled={result.totalCases === 0 && Object.values(qty).every((n) => !n)}
             >
               Clear
             </button>
           </div>
 
-          <p className="fine">Case sizes are typical for each format, for illustration. Skid 48 × 40 in, load up to 60 in and 2,200 lb.</p>
+          <p className="fine">
+            Case sizes are typical for each format, for illustration. Skid 48 × 40 in, load up to 60 in and 2,200 lb.{" "}
+            <a href="https://github.com/imonyousuf" target="_blank" rel="noopener">
+              Built by Imon Yousuf
+            </a>
+          </p>
         </aside>
       </main>
+
+      {tour && <Tour first={tour === "first"} onClose={closeTour} />}
     </div>
   );
 }

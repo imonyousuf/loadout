@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { LIMITS, PALLET, layerPattern } from "./engine/pack";
+import { LIMITS, PALLET, layerPattern, perLayer } from "./engine/pack";
 import { CUSTOM_COLORS, type Product } from "./engine/products";
 
 interface Props {
@@ -41,18 +41,22 @@ export default function AddProduct({ categories, taken, colorIndex, onAdd, onCan
     if (!n) errors.name = "Give the product a name.";
     else if (taken.includes(n.toLowerCase())) errors.name = "There is already a product with this name.";
     if (!category.trim()) errors.category = "Pick or type a category.";
-    let per = 0;
+    let fit = 0;
     if (!(L > 0) || !(W > 0)) errors.size = "Enter the case length and width in inches.";
     else {
-      per = layerPattern(Math.max(L, W), Math.min(L, W)).length;
-      if (per === 0) errors.size = `This case is bigger than the ${PALLET.length} × ${PALLET.width} in skid.`;
+      fit = layerPattern(Math.max(L, W), Math.min(L, W)).length;
+      if (fit === 0) errors.size = `This case is bigger than the ${PALLET.length} × ${PALLET.width} in skid.`;
     }
     if (!(H > 0)) errors.height = "Enter the case height in inches.";
     else if (H > LIMITS.maxLoadHeight) errors.height = `Taller than the ${LIMITS.maxLoadHeight} in load limit.`;
     if (!(Wt > 0)) errors.weight = "Enter the case weight in pounds.";
     else if (Wt > LIMITS.maxLoadWeight) errors.weight = `Heavier than a full pallet allows.`;
-    const layers = per && H > 0 ? Math.floor(LIMITS.maxLoadHeight / H) : 0;
-    return { errors, per, layers, ok: Object.keys(errors).length === 0 };
+    // with a weight, the limit may cap how many cases make a layer and how many layers go up
+    const per = fit && Wt > 0 && Wt <= LIMITS.maxLoadWeight ? perLayer({ length: Math.max(L, W), width: Math.min(L, W), weight: Wt }) : fit;
+    const byHeight = H > 0 ? Math.floor(LIMITS.maxLoadHeight / H) : 0;
+    const byWeight = per && Wt > 0 ? Math.floor(LIMITS.maxLoadWeight / (per * Wt)) : Infinity;
+    const layers = per ? Math.min(byHeight, byWeight) : 0;
+    return { errors, fit, per, layers, ok: Object.keys(errors).length === 0 };
   }, [name, taken, category, L, W, H, Wt]);
 
   const submit = (e: React.FormEvent) => {
@@ -146,7 +150,8 @@ export default function AddProduct({ categories, taken, colorIndex, onAdd, onCan
       <p className="fpreview" aria-live="polite">
         {check.per > 0 ? (
           <>
-            Fits <b>{check.per}</b> per layer{check.layers ? <>, up to <b>{check.layers}</b> layers high</> : null}
+            Fits <b>{check.per}</b> per layer{check.layers ? <>, up to <b>{check.layers}</b> {check.layers === 1 ? "layer" : "layers"} high</> : null}
+            {check.per < check.fit ? <> (the {LIMITS.maxLoadWeight.toLocaleString("en-US")} lb limit caps a layer)</> : null}
           </>
         ) : (
           "Enter a case size to see how it fits on the skid."

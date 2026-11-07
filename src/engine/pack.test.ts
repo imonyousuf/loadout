@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIMITS, PALLET, layerPattern, pack, type Box } from "./pack";
+import { LIMITS, MAX_SEAM, PALLET, layerPattern, pack, perLayer, steadyOn, type Box, type Pallet } from "./pack";
 import { PRODUCTS, PRODUCT_BY_ID } from "./products";
 import { PRESETS } from "../presets";
 
@@ -8,6 +8,18 @@ const intersects = (a: Box, b: Box) =>
   a.x < b.x + b.dx - 1e-6 && b.x < a.x + a.dx - 1e-6 &&
   a.z < b.z + b.dz - 1e-6 && b.z < a.z + a.dz - 1e-6 &&
   a.y < b.y + b.dy - 1e-6 && b.y < a.y + a.dy - 1e-6;
+
+/** Seeded random orders, the same on every run. */
+function randomOrders(count: number, seed = 11) {
+  let r = seed;
+  const rand = () => (r = (r * 1103515245 + 12345) % 2147483648) / 2147483648;
+  return Array.from({ length: count }, () =>
+    PRODUCTS.map((prod) => ({ product: prod, qty: rand() < 0.3 ? 0 : Math.floor(rand() * (prod.fragile ? 20 : 70)) })),
+  );
+}
+
+/** Every layer of a pallet with its cases, bottom first. */
+const layersOf = (pl: Pallet) => pl.layers.map((l) => ({ ...l, boxes: pl.boxes.filter((b) => Math.abs(b.y - l.y) < 1e-6) }));
 
 const bigOrder = () => [
   { product: p("cans24"), qty: 140 },
@@ -132,6 +144,86 @@ describe("pack", () => {
   it("opens a new pallet when one would get too tall", () => {
     const res = pack([{ product: p("twoLitre"), qty: 60 }]);
     expect(res.pallets.length).toBeGreaterThan(1);
+  });
+
+  it("rests every case on the cases below it", () => {
+    const orders = [...PRESETS.map((preset) => PRODUCTS.map((prod) => ({ product: prod, qty: preset.qty[prod.id] ?? 0 }))), ...randomOrders(120)];
+    for (const order of orders) {
+      for (const pl of pack(order).pallets) {
+        const ls = layersOf(pl);
+        // each case touches the layer below over enough of its base, with its middle over that contact
+        for (let i = 1; i < ls.length; i++) expect(steadyOn(ls[i - 1], ls[i]), `layer ${i + 1} of ${ls.length}`).toBe(true);
+      }
+    }
+  });
+
+  it("squares every whole layer on a pallet up to one footprint", () => {
+    const orders = [...PRESETS.map((preset) => PRODUCTS.map((prod) => ({ product: prod, qty: preset.qty[prod.id] ?? 0 }))), ...randomOrders(80, 3)];
+    for (const order of orders) {
+      for (const pl of pack(order).pallets) {
+        const whole = layersOf(pl).filter((l) => l.whole);
+        if (whole.length < 2) continue;
+        const box = (l: (typeof whole)[number]) => ({
+          x0: Math.min(...l.boxes.map((b) => b.x)),
+          x1: Math.max(...l.boxes.map((b) => b.x + b.dx)),
+          z0: Math.min(...l.boxes.map((b) => b.z)),
+          z1: Math.max(...l.boxes.map((b) => b.z + b.dz)),
+        });
+        const boxes = whole.map(box);
+        const outer = {
+          x0: Math.min(...boxes.map((b) => b.x0)),
+          x1: Math.max(...boxes.map((b) => b.x1)),
+          z0: Math.min(...boxes.map((b) => b.z0)),
+          z1: Math.max(...boxes.map((b) => b.z1)),
+        };
+        // no whole layer sits in from the outside of the load by more than one seam
+        for (const b of boxes) {
+          expect(b.x0 - outer.x0).toBeLessThanOrEqual(MAX_SEAM / 2 + 1e-6);
+          expect(outer.x1 - b.x1).toBeLessThanOrEqual(MAX_SEAM / 2 + 1e-6);
+          expect(b.z0 - outer.z0).toBeLessThanOrEqual(MAX_SEAM + 1e-6);
+          expect(outer.z1 - b.z1).toBeLessThanOrEqual(MAX_SEAM + 1e-6);
+        }
+      }
+    }
+  });
+
+  it("never sets drinks on top of chips, in any order", () => {
+    for (const order of randomOrders(120, 5)) {
+      for (const pl of pack(order).pallets) {
+        const ls = layersOf(pl);
+        const firstChips = ls.findIndex((l) => l.productIds.includes("chips"));
+        if (firstChips < 0) continue;
+        for (const l of ls.slice(firstChips)) expect(l.productIds).toEqual(["chips"]);
+      }
+    }
+  });
+
+  it("lets cases of the same size share one complete layer", () => {
+    // 6 bottles and 4 waters are both about 15.6 × 10.5: together they make one whole layer
+    const res = pack([
+      { product: p("bottle24"), qty: 16 },
+      { product: p("water"), qty: 14 },
+    ]);
+    const layers = res.pallets.flatMap((pl) => pl.layers);
+    const shared = layers.filter((l) => l.productIds.length === 2);
+    expect(shared.length).toBe(1);
+    expect(shared[0].whole).toBe(true);
+    expect(shared[0].count).toBe(10);
+  });
+
+  it("splits a product too heavy for a whole layer", () => {
+    const kegs = { id: "kegs", name: "Kegs", detail: "", category: "Beer", length: 16, width: 16, height: 14, weight: 450, color: "#fff" };
+    expect(perLayer(kegs)).toBe(4);
+    const res = pack([{ product: kegs, qty: 12 }]);
+    expect(res.pallets.flatMap((pl) => pl.boxes).length).toBe(12);
+    for (const pl of res.pallets) expect(pl.loadWeight).toBeLessThanOrEqual(LIMITS.maxLoadWeight + 1e-6);
+  });
+
+  it("packs a large order fast enough to follow every keystroke", () => {
+    const order = PRODUCTS.map((prod) => ({ product: prod, qty: 150 }));
+    const t = performance.now();
+    pack(order);
+    expect(performance.now() - t).toBeLessThan(1000);
   });
 
   it("is deterministic", () => {

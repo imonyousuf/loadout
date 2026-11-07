@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Edges, Line, OrbitControls } from "@react-three/drei";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { LIMITS, PALLET, type Pallet } from "./engine/pack";
 import type { Product } from "./engine/products";
@@ -179,7 +179,8 @@ function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, r
   const anim = useRef<{ start: number; order: Map<number, number>; per: number }>({ start: -1, order: new Map(), per: 0.03 });
   const clock = useThree((s) => s.clock);
 
-  useEffect(() => {
+  // a layout effect, so new cases are hidden before the next frame draws them at rest
+  useLayoutEffect(() => {
     const rebuild = prevBuild.current !== buildId;
     prevBuild.current = buildId;
     const fresh: number[] = [];
@@ -247,7 +248,7 @@ function Cases({ pallet, products, buildId, focusLayer, focusProduct, onHover, r
             receiveShadow
             onPointerOver={(e) => {
               e.stopPropagation();
-              onHover({ index: i, layer: layerOf[i] });
+              if (e.object.visible) onHover({ index: i, layer: layerOf[i] });
             }}
             onPointerOut={() => onHover(null)}
           >
