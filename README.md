@@ -1,5 +1,7 @@
 # Loadout
 
+**Try it: [loadout-by-imon.vercel.app](https://loadout-by-imon.vercel.app)**
+
 Loadout turns a store's beverage order into built pallets and shows the stack in 3D.
 Set the cases per product, and it works out each product's best layer pattern, keeps heavy
 cases low and crushable chips on top, mixes leftover cases into shared layers, and splits the
@@ -52,6 +54,8 @@ npm run dev     # local app
 npm test        # packing engine tests
 npm run build
 ```
+
+Every push to `main` deploys to [loadout-by-imon.vercel.app](https://loadout-by-imon.vercel.app) on Vercel.
 
 ## Built with
 
